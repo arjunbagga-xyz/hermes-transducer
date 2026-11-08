@@ -1,0 +1,61 @@
+manifest_version: 2
+name: transducer
+version: 0.1.0
+description: Turns the host laptop into an active 18.5-21.5 kHz ultrasonic FMCW sonar,
+  mechanical FFT/cepstrum vibrometer, and physical timing-jitter/shot-noise true random
+  number generator.
+author: Arjun Bagga <arjunbagga-xyz>
+license: MIT
+homepage: https://github.com/arjunbagga-xyz/hermes-transducer
+repository: https://github.com/arjunbagga-xyz/hermes-transducer
+min_hermes_version: 0.5.0
+max_hermes_version: 1.99.0
+categories:
+- hardware
+- signal-processing
+- physics
+- cryptography
+tags:
+- ultrasonic-sonar
+- fmcw
+- cepstrum
+- vibrometry
+- trng
+- min-entropy
+requires_env: []
+optional_env: []
+python_dependencies:
+- numpy>=1.26,<3.0
+- scipy>=1.11,<2.0
+- pydantic>=2.5,<3.0
+- fastapi>=0.109,<1.0
+provides_tools:
+- transducer_sonar_ping
+- transducer_vibrometer
+- transducer_true_entropy
+- transducer_rnd_stream
+provides_hooks:
+- on_session_start
+config_schema:
+  chirp_f0_hz:
+    type: number
+    default: 18500.0
+    description: Near-ultrasonic LFM sweep start frequency in Hz.
+  chirp_f1_hz:
+    type: number
+    default: 21500.0
+    description: Near-ultrasonic LFM sweep stop frequency in Hz.
+  ambient_temp_celsius:
+    type: number
+    default: 24.0
+    description: Ambient air temperature in Celsius for acoustic speed-of-sound calibration.
+web:
+  enabled: true
+  mount_path: /transducer
+desktop:
+  enabled: true
+  entry: desktop/plugin.js
+  surfaces:
+  - transcript
+  - sidebar
+  - statusbar
