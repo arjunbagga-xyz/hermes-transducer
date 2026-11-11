@@ -1,4 +1,4 @@
-"""transducer: Active Ultrasonic Sonar, Mechanical Vibrometer, R&D Stream & Physical TRNG."""
+"""velvet-transducer: Active Ultrasonic Sonar, Mechanical Vibrometer, R&D Stream & Physical TRNG."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from .engine import (
     TRANSDUCER_RND_STREAM_SCHEMA,
     TRANSDUCER_SONAR_SCHEMA,
     TRANSDUCER_VIBROMETER_SCHEMA,
+    _ensure_json_str,
     handle_transducer_rnd_stream,
     handle_transducer_sonar_ping,
     handle_transducer_true_entropy,
@@ -15,7 +16,7 @@ from .engine import (
 
 
 def on_session_start_hook(payload: dict, **kwargs) -> dict:
-    return {"status": "transducer-ready", "sample_rate_hz": 48000}
+    return {"status": "velvet-transducer-ready", "sample_rate_hz": 48000}
 
 
 def register(ctx) -> None:
@@ -23,7 +24,7 @@ def register(ctx) -> None:
         name="transducer_sonar_ping",
         toolset="transducer",
         schema=TRANSDUCER_SONAR_SCHEMA,
-        handler=handle_transducer_sonar_ping,
+        handler=lambda args, **kw: _ensure_json_str(handle_transducer_sonar_ping(args, **kw)),
         is_async=False,
         emoji="🦇",
     )
@@ -31,7 +32,7 @@ def register(ctx) -> None:
         name="transducer_vibrometer",
         toolset="transducer",
         schema=TRANSDUCER_VIBROMETER_SCHEMA,
-        handler=handle_transducer_vibrometer,
+        handler=lambda args, **kw: _ensure_json_str(handle_transducer_vibrometer(args, **kw)),
         is_async=False,
         emoji="🎛️",
     )
@@ -39,7 +40,7 @@ def register(ctx) -> None:
         name="transducer_true_entropy",
         toolset="transducer",
         schema=TRANSDUCER_ENTROPY_SCHEMA,
-        handler=handle_transducer_true_entropy,
+        handler=lambda args, **kw: _ensure_json_str(handle_transducer_true_entropy(args, **kw)),
         is_async=False,
         emoji="🎲",
     )
@@ -47,7 +48,7 @@ def register(ctx) -> None:
         name="transducer_rnd_stream",
         toolset="transducer",
         schema=TRANSDUCER_RND_STREAM_SCHEMA,
-        handler=handle_transducer_rnd_stream,
+        handler=lambda args, **kw: _ensure_json_str(handle_transducer_rnd_stream(args, **kw)),
         is_async=False,
         emoji="📡",
     )

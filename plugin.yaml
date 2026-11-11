@@ -29,6 +29,7 @@ python_dependencies:
 - scipy>=1.11,<2.0
 - pydantic>=2.5,<3.0
 - fastapi>=0.109,<1.0
+- sounddevice>=0.5.0,<1.0
 provides_tools:
 - transducer_sonar_ping
 - transducer_vibrometer
