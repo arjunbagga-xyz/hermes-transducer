@@ -1,16 +1,16 @@
 ---
 name: transducer-workflow
-description: Use the host laptop's 48kHz audio transducers and silicon clocks as an 18.5-21.5 kHz FMCW ultrasonic sonar, Cepstrum mechanical vibrometer, and NIST SP 800-90B hardware TRNG.
+description: Use the host laptop's 48kHz audio transducers and silicon clocks as an 18.5-21.5 kHz FMCW ultrasonic sonar, Cepstrum mechanical vibrometer, and OS CSPRNG entropy generator.
 ---
 # Velvet Transducer Physical Instrumentation Workflow
-When diagnosing mechanical/fan acoustics, verifying physical operator proximity, running R&D benchmarks, or generating cryptographic keys:
+When diagnosing mechanical/fan acoustics, verifying physical operator proximity, or running R&D benchmarks:
 1. Call `transducer_sonar_ping`, `transducer_vibrometer`, `transducer_true_entropy`, or `transducer_rnd_stream`.
-2. Emit a standalone paragraph `::transducer{primary_m="..." resolution_cm="..." h_inf="..." cloak="..."}` to mount the live R&D oscilloscope in Hermes Desktop.
+2. Emit a standalone paragraph `::transducer{primary_m="..." resolution_cm="..." proximity="..."}` to mount the live R&D oscilloscope in Hermes Desktop.
 
 ## What it actually is (read before relying on it)
 - **Real-audio only.** No simulation mode, no hardcoded fake values. `transducer_sonar_ping` emits a real 18.5-21.5 kHz LFM chirp through the speakers and captures the echo on the microphone. `transducer_vibrometer` records real microphone audio for Welch PSD + cepstrum analysis. No `simulate` parameter, no `simulated_Reflector_distances_m`, no `simulated_fan_rpm`, no `bearing_fault_index`.
-- `proximity_cloak_triggered` is `0.15 < distance <= 0.85` m. A user threshold of 1.5 m is NOT enforced by the flag — inspect `detected_reflectors[].distance_m` manually and compare against the requested threshold.
-- The TRNG harvests OS CSPRNG bytes (`os.urandom`, Windows: BCryptGenRandom; Linux: /dev/urandom) + Von Neumann debiasing + SHA3-256 whitening, then passes NIST SP 800-90B min-entropy H_inf. It is **not** a hardware TRNG — do not recommend it for real cryptographic keys.
+- `proximity_detected` is `0.15 < distance <= 0.85` m. A user threshold of 1.5 m is NOT enforced by the flag — inspect `detected_reflectors[].distance_m` manually and compare against the requested threshold.
+- Entropy bytes are harvested from the host OS CSPRNG (`os.urandom`, Windows: BCryptGenRandom; Linux: /dev/urandom) with SHA3-256 whitening. Private cryptographic keys should never pass through agent chat.
 - `transducer_rnd_stream` reads sonar/vibrometer/TRNG with defensive `.get()` fallbacks so a no-audio or pyaudio-missing host returns degraded sub-frames instead of crashing. `host_loadavg_1m` defaults to `0.0` on hosts without `/proc/loadavg` (e.g. Windows).
 - Doppler shift in `rnd_stream` is `0.0` unless a real moving reflector is detected — no assumed target motion.
 - Real-audio mode requires `pyaudio>=0.2.11` (in `plugin.yaml`). On hosts without pyaudio or a working mic/speaker, tools return `status: "error"` with `mode: "real_audio"` — they do not fall back to simulation.

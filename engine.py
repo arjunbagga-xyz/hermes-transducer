@@ -109,7 +109,7 @@ def handle_transducer_sonar_ping(args: Dict[str, Any], **kwargs: Any) -> Dict[st
     stride = max(1, len(envelope_norm) // 24)
     profile_sparkline = [round(float(v), 3) for v in envelope_norm[::stride][:24]]
 
-    cloak = bool(0.15 < primary_distance_m <= 0.85)
+    proximity = bool(0.15 < primary_distance_m <= 0.85)
     result = {
         "status": "ok",
         "mode": mode,
@@ -117,21 +117,20 @@ def handle_transducer_sonar_ping(args: Dict[str, Any], **kwargs: Any) -> Dict[st
         "chirp_band_hz": [f0_hz, f1_hz],
         "theoretical_range_resolution_cm": round(range_resolution_m * 100.0, 2),
         "primary_reflector_m": primary_distance_m,
-        "proximity_cloak_triggered": cloak,
-        "pet_speech_bubble": (
-            "Physical approach detected at %.2fm - workspace cloaked." % primary_distance_m
-            if cloak
+        "proximity_detected": proximity,
+        "acoustic_status": (
+            "Reflector detected within proximity zone (%.2fm)." % primary_distance_m
+            if proximity
             else "Acoustic perimeter clear."
         ),
         "detected_reflectors": detected_reflectors,
         "range_profile_sparkline": profile_sparkline,
         "transcript_directive": (
-            '::transducer{primary_m="%s" resolution_cm="%s" h_inf="%s" cloak="%s"}'
+            '::transducer{primary_m="%s" resolution_cm="%s" proximity="%s"}'
             % (
                 primary_distance_m,
                 round(range_resolution_m * 100.0, 2),
-                round(0.9997, 4),
-                "true" if cloak else "false",
+                "true" if proximity else "false",
             )
         ),
     }
@@ -141,8 +140,8 @@ def handle_transducer_sonar_ping(args: Dict[str, Any], **kwargs: Any) -> Dict[st
 
 
 def handle_transducer_vibrometer(args: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
-    fs = int(args.get("sample_rate_hz", 8000))
-    duration_s = float(args.get("duration_s", 1.0))
+    fs = min(48000, max(4000, int(args.get("sample_rate_hz", 8000))))
+    duration_s = min(5.0, max(0.1, float(args.get("duration_s", 1.0))))
     blade_count = int(args.get("blade_count", 7))
 
     n = int(round(fs * duration_s))
@@ -206,16 +205,12 @@ def handle_transducer_vibrometer(args: Dict[str, Any], **kwargs: Any) -> Dict[st
 
 def handle_transducer_true_entropy(args: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
     """
-    Harvest physical nanosecond oscillator phase-noise + thermal ADC floor bits,
-    apply Von Neumann extractor debiasing + SHA3-256 cryptographic whitening,
-    and verify NIST SP 800-90B min-entropy H_inf(X) = -log2(max_x P(X=x)).
+    Generate random bytes from the host OS CSPRNG (os.urandom: BCryptGenRandom on Windows, /dev/urandom on Linux)
+    with Von Neumann debiasing and SHA3-256 cryptographic whitening.
     """
-    num_bytes = int(args.get("num_bytes", 32))
+    num_bytes = min(1024, max(1, int(args.get("num_bytes", 32))))
     raw_bits: List[int] = []
 
-    # Harvest raw bits from the OS CSPRNG (Windows: BCryptGenRandom; Linux: /dev/urandom).
-    # This is a real hardware-backed entropy source, strictly stronger than the previous
-    # perf_counter_ns() timing-jitter scheme (which was deterministic-ish and weak).
     import os as _os
     raw_byte_buf = _os.urandom(max(4096, num_bytes * 8))
     for b in raw_byte_buf:
@@ -249,23 +244,19 @@ def handle_transducer_true_entropy(args: Dict[str, Any], **kwargs: Any) -> Dict[
 
     final_bytes = bytes(whitened[:num_bytes])
 
-    # Compute byte-level Shannon and NIST SP 800-90B Min-Entropy H_inf per bit
+    # Compute bit-level min-entropy estimate
     whitened_bits = [((b >> k) & 1) for b in final_bytes for k in range(8)]
     ones_ratio = float(sum(whitened_bits)) / max(1, len(whitened_bits))
     p_max_bit = max(ones_ratio, 1.0 - ones_ratio)
-    # Clamp slight finite-sample deviation
     p_max_bit = min(0.99, max(0.5001, p_max_bit))
     h_inf_per_bit = -math.log2(p_max_bit)
 
     return {
         "status": "ok",
+        "source": "os.urandom",
         "num_bytes": num_bytes,
         "entropy_hex": final_bytes.hex(),
-        "raw_bits_harvested": len(raw_bits),
-        "von_neumann_debiased_bits": len(debiased_bits),
-        "debiased_ones_fraction": round(ones_ratio, 4),
         "min_entropy_per_bit_h_inf": round(h_inf_per_bit, 4),
-        "nist_sp800_90b_pass": bool(h_inf_per_bit >= 0.85),
     }
 
 
@@ -293,15 +284,14 @@ TRANSDUCER_VIBROMETER_SCHEMA: Dict[str, Any] = {
 }
 
 TRANSDUCER_ENTROPY_SCHEMA: Dict[str, Any] = {
-    "name": "velvet_transducer_true_entropy",
+    "name": "transducer_true_entropy",
     "description": (
-        "Harvest physical oscillator timing-jitter and thermal noise bits with Von Neumann debiasing, "
-        "SHA3-256 whitening, and NIST SP 800-90B min-entropy H_inf verification."
+        "Generate cryptographic random bytes from the host OS CSPRNG (os.urandom) with SHA3-256 whitening."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "num_bytes": {"type": "integer", "description": "Number of cryptographic entropy bytes to generate."},
+            "num_bytes": {"type": "integer", "description": "Number of entropy bytes to generate (capped at 1024)."},
         },
     },
 }
@@ -309,27 +299,16 @@ TRANSDUCER_ENTROPY_SCHEMA: Dict[str, Any] = {
 
 def handle_transducer_rnd_stream(args: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
     """
-    Live R&D Physical Instrumentation Stream (for acoustic, mechanical, silicon benchmarking,
-    and cryptographic Monte Carlo experiments):
-      1. Ultrasonic FMCW Range + Doppler Velocity Shift: delta_f = (2 * v_radial / c) * f0
-      2. Schroeder Backward Integration RT60 Acoustic Reverberation Time
-      3. Mechanical Welch PSD + Power Cepstrum C_p(q) Waterfall Frame
-      4. Host Silicon Load & Oscillator Timing-Jitter Entropy Frame
+    Live R&D Physical Instrumentation Stream:
+      1. Ultrasonic FMCW Range profile
+      2. Mechanical Welch PSD + Power Cepstrum C_p(q)
+      3. Host Silicon Load & OS CSPRNG Entropy Frame
     """
     sonar = handle_transducer_sonar_ping(args)
     vib = handle_transducer_vibrometer(args)
     trng = handle_transducer_true_entropy({"num_bytes": 16})
 
-    c_sound = sonar.get("speed_of_sound_mps", 343.0) if sonar.get("status") == "ok" else 343.0
-    f0_hz = 20000.0
-    # No assumed target motion — Doppler shift is 0 unless a real moving reflector is detected
-    radial_vel_mps = 0.0
-    doppler_shift_hz = (2.0 * radial_vel_mps / c_sound) * f0_hz
-
-    # Schroeder integral estimate of room reverberation time RT60
-    rt60_ms = 245.0
-
-    # Read real Linux host loadavg if available for silicon R&D correlation (0.0 on hosts without /proc)
+    # Read real Linux host loadavg if available (0.0 on hosts without /proc)
     load_1m = 0.0
     try:
         with open("/proc/loadavg", "r", encoding="utf-8") as f:
@@ -339,9 +318,6 @@ def handle_transducer_rnd_stream(args: Dict[str, Any], **kwargs: Any) -> Dict[st
 
     sonar_frame = {
         "primary_reflector_m": sonar.get("primary_reflector_m", 0.0),
-        "doppler_shift_hz": round(doppler_shift_hz, 2),
-        "radial_velocity_mps": round(radial_vel_mps, 3),
-        "schroeder_rt60_ms": rt60_ms,
         "sonar_status": sonar.get("status", "unknown"),
     }
     if sonar.get("status") != "ok":

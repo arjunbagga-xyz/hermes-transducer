@@ -13,8 +13,11 @@ router = APIRouter()
 def get_transducer_status() -> dict:
     latest = LAST_TRANSDUCER_CACHE.get("latest")
     if not latest:
-        # Real-audio only — /status reflects actual hardware state, may be degraded on headless hosts
-        latest = handle_transducer_sonar_ping({})
+        return {
+            "plugin": "transducer",
+            "status": "idle",
+            "message": "no data yet",
+        }
     if isinstance(latest, dict) and latest.get("status") == "error":
         return {
             "plugin": "transducer",
